@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Watch</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="bg-gradient" aria-hidden="true"></div>
+    <div class="noise" aria-hidden="true"></div>
+
+    <div class="header-sticky">
+      <header class="site-header glass-bar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">Watch</span>
+        </div>
+        <p class="tagline">Discover &amp; play</p>
+      </header>
+    </div>
+
+    <main class="main">
+      <section class="hero glass-panel" aria-labelledby="search-heading">
+        <div class="hero-inner hero-inner--wide">
+          <h1 id="search-heading" class="hero-title">What do you want to watch?</h1>
+          <p class="hero-sub">
+            Pick Movies, TV, or Anime. Search updates per tab. Anime uses Japanese animation (genre
+            16). Dub applies to anime embeds only.
+          </p>
+
+          <div
+            class="mode-toggle mode-toggle--triple"
+            role="tablist"
+            aria-label="Browse by type"
+          >
+            <button
+              type="button"
+              class="mode-btn is-active"
+              data-mode="movie"
+              id="mode-movie"
+              role="tab"
+              aria-selected="true"
+            >
+              Movies
+            </button>
+            <button
+              type="button"
+              class="mode-btn"
+              data-mode="tv"
+              id="mode-tv"
+              role="tab"
+              aria-selected="false"
+            >
+              TV
+            </button>
+            <button
+              type="button"
+              class="mode-btn"
+              data-mode="anime"
+              id="mode-anime"
+              role="tab"
+              aria-selected="false"
+            >
+              Anime
+            </button>
+          </div>
+
+          <div class="search-row search-row--solo">
+            <label class="field search-field search-field--grow">
+              <span class="field-label">Search</span>
+              <span class="input-shell">
+                <svg
+                  class="input-icon"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                  />
+                  <path
+                    d="m21 21-4.35-4.35"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <input
+                  type="search"
+                  id="live-search"
+                  class="search-input"
+                  placeholder="Titles, people…"
+                  autocomplete="off"
+                  spellcheck="false"
+                  aria-describedby="search-hint"
+                />
+              </span>
+              <span id="search-hint" class="field-hint"
+                >Live multi search — filtered by the tab you’re on.</span
+              >
+            </label>
+          </div>
+
+          <p class="error" id="error-msg" role="alert" hidden></p>
+        </div>
+      </section>
+
+      <section
+        class="discover-section glass-panel"
+        id="search-results-section"
+        aria-labelledby="results-heading"
+        hidden
+      >
+        <div class="section-head">
+          <h2 id="results-heading" class="section-heading">Results</h2>
+          <span class="section-meta" id="results-meta"></span>
+        </div>
+        <div id="search-grid" class="bento-grid" role="list"></div>
+      </section>
+
+      <section class="discover-section glass-panel" aria-labelledby="trending-heading">
+        <div class="section-head">
+          <h2 id="trending-heading" class="section-heading">Trending today</h2>
+          <span class="section-meta" id="trending-meta">Top 20 movies</span>
+        </div>
+        <div id="trending-grid" class="bento-grid" role="list"></div>
+      </section>
+
+      <section
+        class="player-section glass-panel"
+        id="player-section"
+        aria-labelledby="player-heading"
+      >
+        <div class="player-head">
+          <div class="player-head-start">
+            <h2 id="player-heading" class="section-title">Player</h2>
+            <div class="dub-toggle-wrap">
+              <span class="dub-toggle-label" id="dub-label">Audio (anime)</span>
+              <div
+                class="dub-toggle movie-chip"
+                id="dub-toggle"
+                role="group"
+                aria-labelledby="dub-label"
+              >
+                <button
+                  type="button"
+                  class="dub-toggle-btn is-active"
+                  id="pref-sub"
+                  data-dub="false"
+                  aria-pressed="true"
+                >
+                  Sub
+                </button>
+                <button
+                  type="button"
+                  class="dub-toggle-btn"
+                  id="pref-dub"
+                  data-dub="true"
+                  aria-pressed="false"
+                >
+                  Dub
+                </button>
+              </div>
+            </div>
+          </div>
+          <code class="embed-url" id="embed-url-display">—</code>
+        </div>
+        <div class="player-frame-wrap player-wrapper">
+          <div class="player-placeholder" id="player-placeholder">
+            <p>Choose a title from the grid or search results.</p>
+          </div>
+          <iframe
+            id="player"
+            class="player-frame"
+            title="Video player"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+            hidden
+          ></iframe>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        This product uses the TMDB API but is not endorsed by TMDB. Embeds: VidKing / VidPlus
+        (anime). Not affiliated with hosts.
+      </p>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>
