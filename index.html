@@ -7,153 +7,178 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div class="bg-gradient" aria-hidden="true"></div>
-    <div class="noise" aria-hidden="true"></div>
-
     <div class="header-sticky">
-      <header class="site-header glass-bar">
+      <header class="site-header">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true"></span>
           <span class="brand-name">Watch</span>
         </div>
-        <p class="tagline">Discover &amp; play</p>
+        <p class="tagline">Stream</p>
       </header>
     </div>
 
-    <main class="main">
-      <section class="hero glass-panel" aria-labelledby="search-heading">
-        <div class="hero-inner hero-inner--wide">
-          <h1 id="search-heading" class="hero-title">What do you want to watch?</h1>
-          <p class="hero-sub">
-            Pick Movies, TV, or Anime. Search updates per tab. Anime uses Japanese animation (genre
-            16). Dub applies to anime embeds only.
-          </p>
-
-          <div
-            class="mode-toggle mode-toggle--triple"
-            role="tablist"
-            aria-label="Browse by type"
-          >
-            <button
-              type="button"
-              class="mode-btn is-active"
-              data-mode="movie"
-              id="mode-movie"
-              role="tab"
-              aria-selected="true"
-            >
-              Movies
-            </button>
-            <button
-              type="button"
-              class="mode-btn"
-              data-mode="tv"
-              id="mode-tv"
-              role="tab"
-              aria-selected="false"
-            >
-              TV
-            </button>
-            <button
-              type="button"
-              class="mode-btn"
-              data-mode="anime"
-              id="mode-anime"
-              role="tab"
-              aria-selected="false"
-            >
-              Anime
-            </button>
-          </div>
-
-          <div class="search-row search-row--solo">
-            <label class="field search-field search-field--grow">
-              <span class="field-label">Search</span>
-              <span class="input-shell">
-                <svg
-                  class="input-icon"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                  />
-                  <path
-                    d="m21 21-4.35-4.35"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                  />
-                </svg>
-                <input
-                  type="search"
-                  id="live-search"
-                  class="search-input"
-                  placeholder="Titles, people…"
-                  autocomplete="off"
-                  spellcheck="false"
-                  aria-describedby="search-hint"
-                />
-              </span>
-              <span id="search-hint" class="field-hint"
-                >Live multi search — filtered by the tab you’re on.</span
-              >
-            </label>
-          </div>
-
-          <p class="error" id="error-msg" role="alert" hidden></p>
+    <section class="featured-hero" id="featured-hero" aria-labelledby="featured-title">
+      <div class="featured-hero__media">
+        <img
+          class="featured-hero__backdrop"
+          id="featured-backdrop"
+          alt=""
+          width="1920"
+          height="1080"
+          decoding="async"
+          hidden
+        />
+        <div class="featured-hero__scrim" aria-hidden="true"></div>
+        <div class="featured-hero__vignette" aria-hidden="true"></div>
+      </div>
+      <div class="featured-hero__inner">
+        <div class="featured-hero__content">
+          <h1 class="featured-hero__title" id="featured-title">Featured</h1>
+          <p class="featured-hero__meta" id="featured-meta"></p>
+          <p class="featured-hero__overview" id="featured-overview"></p>
+          <button type="button" class="btn-play-hero" id="featured-play" disabled>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M8 5v14l11-7L8 5Z" />
+            </svg>
+            Play
+          </button>
         </div>
+      </div>
+    </section>
+
+    <main class="main content-shell">
+      <section class="browse-toolbar" aria-label="Browse and search">
+        <div
+          class="mode-toggle mode-toggle--triple"
+          role="tablist"
+          aria-label="Browse by type"
+        >
+          <button
+            type="button"
+            class="mode-btn is-active"
+            data-mode="movie"
+            id="mode-movie"
+            role="tab"
+            aria-selected="true"
+          >
+            Movies
+          </button>
+          <button
+            type="button"
+            class="mode-btn"
+            data-mode="tv"
+            id="mode-tv"
+            role="tab"
+            aria-selected="false"
+          >
+            TV
+          </button>
+          <button
+            type="button"
+            class="mode-btn"
+            data-mode="anime"
+            id="mode-anime"
+            role="tab"
+            aria-selected="false"
+          >
+            Anime
+          </button>
+        </div>
+        <div class="search-inline">
+          <label class="visually-hidden" for="live-search">Search</label>
+          <span class="input-shell input-shell--compact">
+            <svg
+              class="input-icon"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+              <path
+                d="m21 21-4.35-4.35"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+            <input
+              type="search"
+              id="live-search"
+              class="search-input"
+              placeholder="Search titles…"
+              autocomplete="off"
+              spellcheck="false"
+              aria-describedby="search-hint"
+            />
+          </span>
+        </div>
+        <p id="search-hint" class="toolbar-hint">Results follow the active tab.</p>
+        <p class="error" id="error-msg" role="alert" hidden></p>
       </section>
 
       <section
-        class="discover-section glass-panel"
+        class="row-section"
         id="search-results-section"
         aria-labelledby="results-heading"
         hidden
       >
-        <div class="section-head">
-          <h2 id="results-heading" class="section-heading">Results</h2>
-          <span class="section-meta" id="results-meta"></span>
+        <div class="row-section__head">
+          <h2 id="results-heading" class="row-section__title">Results</h2>
+          <span class="row-section__meta" id="results-meta"></span>
         </div>
-        <div id="search-grid" class="bento-grid" role="list"></div>
+        <div class="row-scroll" tabindex="0" role="region" aria-label="Search results">
+          <div id="search-grid" class="row-track" role="list"></div>
+        </div>
       </section>
 
-      <section class="discover-section glass-panel" aria-labelledby="trending-heading">
-        <div class="section-head">
-          <h2 id="trending-heading" class="section-heading">Trending today</h2>
-          <span class="section-meta" id="trending-meta">Top 20 movies</span>
+      <section class="row-section" aria-labelledby="trending-heading">
+        <div class="row-section__head">
+          <h2 id="trending-heading" class="row-section__title">Trending today</h2>
+          <span class="row-section__meta" id="trending-meta">Movies</span>
         </div>
-        <div id="trending-grid" class="bento-grid" role="list"></div>
+        <div class="row-scroll" tabindex="0" role="region" aria-labelledby="trending-heading">
+          <div id="trending-grid" class="row-track" role="list"></div>
+        </div>
       </section>
 
-      <section
-        class="player-section glass-panel"
-        id="player-section"
-        aria-labelledby="player-heading"
-      >
+      <section class="row-section" aria-labelledby="netflix-heading">
+        <div class="row-section__head">
+          <h2 id="netflix-heading" class="row-section__title">Netflix</h2>
+          <span class="row-section__meta">Popular on Netflix</span>
+        </div>
+        <div class="row-scroll" tabindex="0" role="region" aria-labelledby="netflix-heading">
+          <div id="netflix-grid" class="row-track" role="list"></div>
+        </div>
+      </section>
+
+      <section class="top10-block" aria-labelledby="top10-heading">
+        <div class="row-section__head">
+          <h2 id="top10-heading" class="row-section__title">Top 10</h2>
+          <span class="row-section__meta" id="top10-meta">Today</span>
+        </div>
+        <div id="top10-grid" class="top10-grid" role="list"></div>
+      </section>
+
+      <section class="player-block" id="player-section" aria-labelledby="player-heading">
         <div class="player-head">
           <div class="player-head-start">
             <h2 id="player-heading" class="section-title">Player</h2>
             <div class="dub-toggle-wrap">
               <span class="dub-toggle-label" id="dub-label">Audio (anime)</span>
-              <div
-                class="dub-toggle movie-chip"
-                id="dub-toggle"
-                role="group"
-                aria-labelledby="dub-label"
-              >
+              <div class="dub-toggle movie-chip" id="dub-toggle" role="group" aria-labelledby="dub-label">
                 <button
                   type="button"
                   class="dub-toggle-btn is-active"
@@ -179,7 +204,7 @@
         </div>
         <div class="player-frame-wrap player-wrapper">
           <div class="player-placeholder" id="player-placeholder">
-            <p>Choose a title from the grid or search results.</p>
+            <p>Choose a title from the rows above.</p>
           </div>
           <iframe
             id="player"
