@@ -7,6 +7,7 @@
 
   const API_BASE = "https://api.themoviedb.org/3";
   const IMG_BASE = "https://image.tmdb.org/t/p/w500";
+  const IMG_BACKDROP = "https://image.tmdb.org/t/p/w1280";
 
   const MODE_MOVIE = "movie";
   const MODE_TV = "tv";
@@ -37,6 +38,14 @@
     trendingGrid: document.getElementById("trending-grid"),
     trendingHeading: document.getElementById("trending-heading"),
     trendingMeta: document.getElementById("trending-meta"),
+    netflixGrid: document.getElementById("netflix-grid"),
+    top10Grid: document.getElementById("top10-grid"),
+    top10Meta: document.getElementById("top10-meta"),
+    featuredBackdrop: document.getElementById("featured-backdrop"),
+    featuredTitle: document.getElementById("featured-title"),
+    featuredMeta: document.getElementById("featured-meta"),
+    featuredOverview: document.getElementById("featured-overview"),
+    featuredPlay: document.getElementById("featured-play"),
     embedUrl: document.getElementById("embed-url-display"),
     iframe: document.getElementById("player"),
     placeholder: document.getElementById("player-placeholder"),
@@ -50,7 +59,11 @@
     movie: { items: [], loaded: false },
     tv: { items: [], loaded: false },
     anime: { items: [], loaded: false },
+    netflix: { items: [], loaded: false },
   };
+
+  /** @type {ReturnType<typeof normalizeMovie>|ReturnType<typeof normalizeTv>|null} */
+  let featuredItem = null;
 
   let mode = MODE_MOVIE;
   let isDub = false;
@@ -164,6 +177,18 @@
     return IMG_BASE + path;
   }
 
+  function backdropUrl(path) {
+    if (!path) return "";
+    return IMG_BACKDROP + path;
+  }
+
+  function clipText(str, max) {
+    if (!str) return "";
+    const t = String(str).trim();
+    if (t.length <= max) return t;
+    return t.slice(0, max).trim() + "…";
+  }
+
   function yearFromItem(item, mediaType) {
     const raw = mediaType === "tv" ? item.first_air_date : item.release_date;
     if (!raw || typeof raw !== "string") return "—";
@@ -187,6 +212,8 @@
       title: titleFromItem(m, "movie"),
       year: yearFromItem(m, "movie"),
       poster_path: m.poster_path || null,
+      backdrop_path: m.backdrop_path || null,
+      overview: typeof m.overview === "string" ? m.overview : "",
       isAnime: !!isAnime,
     };
   }
@@ -202,6 +229,8 @@
       title: titleFromItem(t, "tv"),
       year: yearFromItem(t, "tv"),
       poster_path: t.poster_path || null,
+      backdrop_path: t.backdrop_path || null,
+      overview: typeof t.overview === "string" ? t.overview : "",
       isAnime: !!isAnime,
     };
   }
@@ -340,7 +369,7 @@
     while (el.firstChild) el.removeChild(el.firstChild);
   }
 
-  function fillSkeletonGrid(container, count) {
+  function fillSkeletonRow(container, count) {
     clearChildren(container);
     for (let i = 0; i < count; i += 1) {
       const sk = document.createElement("div");
@@ -348,6 +377,109 @@
       sk.setAttribute("aria-hidden", "true");
       container.appendChild(sk);
     }
+  }
+
+  function fillSkeletonTop10(container) {
+    clearChildren(container);
+    for (let i = 0; i < 10; i += 1) {
+      const sk = document.createElement("div");
+      sk.className = "top10-skeleton";
+      sk.setAttribute("aria-hidden", "true");
+      container.appendChild(sk);
+    }
+  }
+
+  function buildFeaturedMetaLine(item) {
+    const bits = [];
+    if (item.year && item.year !== "—") bits.push(item.year);
+    if (item.isAnime) bits.push("Anime");
+    else if (item.media_type === "tv") bits.push("Series");
+    else bits.push("Movie");
+    return bits.join(" · ");
+  }
+
+  function updateFeaturedHero(item) {
+    featuredItem = item && item.id ? item : null;
+    if (!els.featuredBackdrop || !els.featuredTitle) return;
+
+    if (!featuredItem) {
+      els.featuredTitle.textContent = "Featured";
+      els.featuredMeta.textContent = "";
+      if (els.featuredOverview) {
+        els.featuredOverview.textContent = "";
+        els.featuredOverview.hidden = true;
+      }
+      els.featuredBackdrop.hidden = true;
+      els.featuredBackdrop.removeAttribute("src");
+      if (els.featuredPlay) els.featuredPlay.disabled = true;
+      return;
+    }
+
+    if (els.featuredPlay) els.featuredPlay.disabled = false;
+
+    els.featuredTitle.textContent = featuredItem.title || "Featured";
+    els.featuredMeta.textContent = buildFeaturedMetaLine(featuredItem);
+    if (els.featuredOverview) {
+      const ov = clipText(featuredItem.overview, 280);
+      els.featuredOverview.textContent = ov;
+      els.featuredOverview.hidden = !ov;
+    }
+
+    const path = featuredItem.backdrop_path || featuredItem.poster_path;
+    if (path) {
+      els.featuredBackdrop.src = path.indexOf("http") === 0 ? path : backdropUrl(path);
+      els.featuredBackdrop.hidden = false;
+    } else {
+      els.featuredBackdrop.hidden = true;
+      els.featuredBackdrop.removeAttribute("src");
+    }
+  }
+
+  function renderTop10(container, items) {
+    if (!container) return;
+    clearChildren(container);
+    const list = (items || []).slice(0, 10);
+    list.forEach(function (item, index) {
+      const rank = index + 1;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "top10-card movie-card";
+      btn.setAttribute("role", "listitem");
+      btn.setAttribute("aria-label", "Play ranked " + rank + ": " + item.title);
+
+      const rankEl = document.createElement("span");
+      rankEl.className = "top10-card__rank";
+      rankEl.textContent = String(rank);
+      rankEl.setAttribute("aria-hidden", "true");
+
+      const poster = document.createElement("div");
+      poster.className = "top10-card__poster";
+      if (item.poster_path) {
+        const img = document.createElement("img");
+        img.src = posterUrl(item.poster_path);
+        img.alt = "";
+        img.setAttribute("loading", "lazy");
+        img.setAttribute("decoding", "async");
+        poster.appendChild(img);
+      }
+
+      btn.appendChild(rankEl);
+      btn.appendChild(poster);
+      btn.addEventListener("click", function () {
+        loadMedia(item.id, item.media_type, { isAnime: item.isAnime });
+      });
+      container.appendChild(btn);
+    });
+  }
+
+  function syncHeroAndTop10FromCatalog(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      updateFeaturedHero(null);
+      renderTop10(els.top10Grid, []);
+      return;
+    }
+    updateFeaturedHero(items[0]);
+    renderTop10(els.top10Grid, items);
   }
 
   /**
@@ -367,6 +499,36 @@
         "Play " + item.title + " (" + item.year + "), " + item.media_type
       );
 
+      const inner = document.createElement("div");
+      inner.className = "media-card__inner";
+
+      if (item.poster_path) {
+        const img = document.createElement("img");
+        img.src = posterUrl(item.poster_path);
+        img.alt = "";
+        img.setAttribute("loading", "lazy");
+        img.setAttribute("decoding", "async");
+        inner.appendChild(img);
+      }
+
+      const overlay = document.createElement("div");
+      overlay.className = "media-card-overlay";
+      inner.appendChild(overlay);
+
+      const meta = document.createElement("div");
+      meta.className = "media-card-meta";
+      const h = document.createElement("p");
+      h.className = "media-card-title";
+      h.textContent = item.title;
+      const y = document.createElement("p");
+      y.className = "media-card-year";
+      y.textContent = item.year;
+      meta.appendChild(h);
+      meta.appendChild(y);
+      inner.appendChild(meta);
+
+      btn.appendChild(inner);
+
       if (item.isAnime) {
         const lang = document.createElement("span");
         lang.className = "media-card-lang movie-chip";
@@ -380,31 +542,6 @@
         item.media_type === "tv" ? (item.isAnime ? "Anime" : "TV") : item.isAnime ? "Anime" : "Movie";
       btn.appendChild(badge);
 
-      if (item.poster_path) {
-        const img = document.createElement("img");
-        img.src = posterUrl(item.poster_path);
-        img.alt = "";
-        img.setAttribute("loading", "lazy");
-        img.setAttribute("decoding", "async");
-        btn.appendChild(img);
-      }
-
-      const overlay = document.createElement("div");
-      overlay.className = "media-card-overlay";
-      btn.appendChild(overlay);
-
-      const meta = document.createElement("div");
-      meta.className = "media-card-meta";
-      const h = document.createElement("p");
-      h.className = "media-card-title";
-      h.textContent = item.title;
-      const y = document.createElement("p");
-      y.className = "media-card-year";
-      y.textContent = item.year;
-      meta.appendChild(h);
-      meta.appendChild(y);
-      btn.appendChild(meta);
-
       btn.addEventListener("click", function () {
         loadMedia(item.id, item.media_type, { isAnime: item.isAnime });
       });
@@ -416,9 +553,11 @@
   async function ensureMovieTrending() {
     if (catalog.movie.loaded) {
       renderMediaCards(els.trendingGrid, catalog.movie.items);
+      syncHeroAndTop10FromCatalog(catalog.movie.items);
       return;
     }
-    fillSkeletonGrid(els.trendingGrid, TRENDING_COUNT);
+    fillSkeletonRow(els.trendingGrid, TRENDING_COUNT);
+    fillSkeletonTop10(els.top10Grid);
     try {
       const data = await tmdbFetch("/trending/movie/day", { page: 1 });
       const raw = Array.isArray(data.results) ? data.results.slice(0, TRENDING_COUNT) : [];
@@ -427,8 +566,10 @@
       });
       catalog.movie.loaded = true;
       renderMediaCards(els.trendingGrid, catalog.movie.items);
+      syncHeroAndTop10FromCatalog(catalog.movie.items);
     } catch (e) {
       clearChildren(els.trendingGrid);
+      renderTop10(els.top10Grid, []);
       showError("Could not load trending movies: " + (e.message || "Unknown error"));
     }
   }
@@ -436,9 +577,11 @@
   async function ensureTvTrending() {
     if (catalog.tv.loaded) {
       renderMediaCards(els.trendingGrid, catalog.tv.items);
+      syncHeroAndTop10FromCatalog(catalog.tv.items);
       return;
     }
-    fillSkeletonGrid(els.trendingGrid, TRENDING_COUNT);
+    fillSkeletonRow(els.trendingGrid, TRENDING_COUNT);
+    fillSkeletonTop10(els.top10Grid);
     try {
       const data = await tmdbFetch("/trending/tv/day", { page: 1 });
       const raw = Array.isArray(data.results) ? data.results.slice(0, TRENDING_COUNT) : [];
@@ -447,8 +590,10 @@
       });
       catalog.tv.loaded = true;
       renderMediaCards(els.trendingGrid, catalog.tv.items);
+      syncHeroAndTop10FromCatalog(catalog.tv.items);
     } catch (e) {
       clearChildren(els.trendingGrid);
+      renderTop10(els.top10Grid, []);
       showError("Could not load trending TV: " + (e.message || "Unknown error"));
     }
   }
@@ -456,9 +601,11 @@
   async function ensureAnimeCatalog() {
     if (catalog.anime.loaded) {
       renderMediaCards(els.trendingGrid, catalog.anime.items);
+      syncHeroAndTop10FromCatalog(catalog.anime.items);
       return;
     }
-    fillSkeletonGrid(els.trendingGrid, TRENDING_COUNT);
+    fillSkeletonRow(els.trendingGrid, TRENDING_COUNT);
+    fillSkeletonTop10(els.top10Grid);
     try {
       const [mov, tv] = await Promise.all([
         tmdbFetch("/discover/movie", discoverAnimeParams),
@@ -497,22 +644,52 @@
       catalog.anime.items = deduped;
       catalog.anime.loaded = true;
       renderMediaCards(els.trendingGrid, catalog.anime.items);
+      syncHeroAndTop10FromCatalog(catalog.anime.items);
     } catch (e) {
       clearChildren(els.trendingGrid);
+      renderTop10(els.top10Grid, []);
       showError("Could not load anime: " + (e.message || "Unknown error"));
+    }
+  }
+
+  async function ensureNetflixRow() {
+    if (!els.netflixGrid) return;
+    if (catalog.netflix.loaded) {
+      renderMediaCards(els.netflixGrid, catalog.netflix.items);
+      return;
+    }
+    fillSkeletonRow(els.netflixGrid, 12);
+    try {
+      const data = await tmdbFetch("/discover/movie", {
+        with_watch_providers: "8",
+        watch_region: "US",
+        sort_by: "popularity.desc",
+        page: 1,
+      });
+      const raw = Array.isArray(data.results) ? data.results.slice(0, 20) : [];
+      catalog.netflix.items = raw.map(function (m) {
+        return normalizeMovie(m, false);
+      });
+      catalog.netflix.loaded = true;
+      renderMediaCards(els.netflixGrid, catalog.netflix.items);
+    } catch (e) {
+      clearChildren(els.netflixGrid);
     }
   }
 
   function updateDiscoverTitles() {
     if (mode === MODE_ANIME) {
       els.trendingHeading.textContent = "Popular anime";
-      els.trendingMeta.textContent = "Genre 16 · original language: ja";
+      els.trendingMeta.textContent = "Genre 16 · JA";
+      if (els.top10Meta) els.top10Meta.textContent = "Anime picks";
     } else if (mode === MODE_TV) {
       els.trendingHeading.textContent = "Trending today";
-      els.trendingMeta.textContent = "Top 20 TV";
+      els.trendingMeta.textContent = "TV shows";
+      if (els.top10Meta) els.top10Meta.textContent = "TV today";
     } else {
       els.trendingHeading.textContent = "Trending today";
-      els.trendingMeta.textContent = "Top 20 movies";
+      els.trendingMeta.textContent = "Movies";
+      if (els.top10Meta) els.top10Meta.textContent = "Movies today";
     }
   }
 
@@ -565,7 +742,7 @@
     }
 
     els.searchSection.hidden = false;
-    fillSkeletonGrid(els.searchGrid, 12);
+    fillSkeletonRow(els.searchGrid, 12);
     hideError();
 
     try {
@@ -643,6 +820,16 @@
       els.dubToggle.classList.toggle("dub-toggle--dub-on", isDub);
     }
 
+    if (els.featuredPlay) {
+      els.featuredPlay.addEventListener("click", function () {
+        if (!featuredItem) return;
+        loadMedia(featuredItem.id, featuredItem.media_type, {
+          isAnime: featuredItem.isAnime,
+        });
+      });
+    }
+
+    ensureNetflixRow();
     refreshDiscoverSection();
   }
 
