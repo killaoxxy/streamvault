@@ -606,6 +606,7 @@ body {
 /* ——— Top 10 ——— */
 .top10-block {
   padding: 1.75rem 0 0.5rem;
+  background-color: #000000;
 }
 
 .top10-grid {
@@ -613,6 +614,7 @@ body {
   grid-template-columns: repeat(2, 1fr);
   gap: 1rem 0.75rem;
   padding: 0 1.25rem 1.25rem;
+  background-color: #000000;
 }
 
 @media (min-width: 520px) {
