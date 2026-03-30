@@ -72,6 +72,10 @@
 
   let searchTimer = 0;
   let searchGeneration = 0;
+  /** @type {ReturnType<typeof setInterval> | null} */
+  let heroRotationTimer = null;
+  const HERO_SWAP_MS = 30000;
+
   /** @type {ReturnType<typeof setTimeout> | null} */
   let vidplusAnimeFallbackTimer = null;
   /** @type {(() => void) | null} */
@@ -472,14 +476,58 @@
     });
   }
 
+  function getCurrentTrendingItems() {
+    if (mode === MODE_ANIME && catalog.anime.loaded) return catalog.anime.items;
+    if (mode === MODE_TV && catalog.tv.loaded) return catalog.tv.items;
+    if (catalog.movie.loaded) return catalog.movie.items;
+    return [];
+  }
+
+  function rotateHeroToRandomTrending() {
+    const list = getCurrentTrendingItems();
+    if (list.length === 0) return;
+    if (list.length === 1) {
+      updateFeaturedHero(list[0]);
+      return;
+    }
+    let idx = 0;
+    let attempts = 0;
+    do {
+      idx = Math.floor(Math.random() * list.length);
+      attempts += 1;
+    } while (
+      attempts < 16 &&
+      featuredItem &&
+      list[idx].id === featuredItem.id &&
+      list[idx].media_type === featuredItem.media_type
+    );
+    updateFeaturedHero(list[idx]);
+  }
+
+  function stopHeroAutoSwap() {
+    if (heroRotationTimer !== null) {
+      clearInterval(heroRotationTimer);
+      heroRotationTimer = null;
+    }
+  }
+
+  function startHeroAutoSwap() {
+    stopHeroAutoSwap();
+    const list = getCurrentTrendingItems();
+    if (list.length === 0) return;
+    heroRotationTimer = window.setInterval(rotateHeroToRandomTrending, HERO_SWAP_MS);
+  }
+
   function syncHeroAndTop10FromCatalog(items) {
     if (!Array.isArray(items) || items.length === 0) {
       updateFeaturedHero(null);
       renderTop10(els.top10Grid, []);
+      stopHeroAutoSwap();
       return;
     }
     updateFeaturedHero(items[0]);
     renderTop10(els.top10Grid, items);
+    startHeroAutoSwap();
   }
 
   /**
@@ -570,6 +618,8 @@
     } catch (e) {
       clearChildren(els.trendingGrid);
       renderTop10(els.top10Grid, []);
+      updateFeaturedHero(null);
+      stopHeroAutoSwap();
       showError("Could not load trending movies: " + (e.message || "Unknown error"));
     }
   }
@@ -594,6 +644,8 @@
     } catch (e) {
       clearChildren(els.trendingGrid);
       renderTop10(els.top10Grid, []);
+      updateFeaturedHero(null);
+      stopHeroAutoSwap();
       showError("Could not load trending TV: " + (e.message || "Unknown error"));
     }
   }
@@ -648,6 +700,8 @@
     } catch (e) {
       clearChildren(els.trendingGrid);
       renderTop10(els.top10Grid, []);
+      updateFeaturedHero(null);
+      stopHeroAutoSwap();
       showError("Could not load anime: " + (e.message || "Unknown error"));
     }
   }
