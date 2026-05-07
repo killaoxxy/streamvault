@@ -18,6 +18,12 @@
 
   const DEBOUNCE_MS = 320;
   const TRENDING_COUNT = 20;
+  const HERO_SWAP_MS = 30000;
+  const ANIME_MOVIE_FALLBACK_MS = 8000;
+  const DEFAULT_SEASON = 1;
+  const DEFAULT_EPISODE = 1;
+  const DUB_STORAGE_KEY = "ilovenya-anime-dub";
+  const EMBED_THEME = "fafafa";
 
   const discoverAnimeParams = {
     with_genres: String(GENRE_ANIMATION),
@@ -26,6 +32,7 @@
     page: 1,
   };
 
+  // ——— Element refs ———
   const els = {
     modeMovie: document.getElementById("mode-movie"),
     modeTv: document.getElementById("mode-tv"),
@@ -46,15 +53,24 @@
     featuredMeta: document.getElementById("featured-meta"),
     featuredOverview: document.getElementById("featured-overview"),
     featuredPlay: document.getElementById("featured-play"),
+    // Player modal
+    playerOverlay: document.getElementById("player-overlay"),
+    playerClose: document.getElementById("player-close"),
+    playerModalTitle: document.getElementById("player-modal-title"),
+    playerModalMeta: document.getElementById("player-modal-meta"),
     embedUrl: document.getElementById("embed-url-display"),
     iframe: document.getElementById("player"),
     placeholder: document.getElementById("player-placeholder"),
-    playerSection: document.getElementById("player-section"),
     prefSub: document.getElementById("pref-sub"),
     prefDub: document.getElementById("pref-dub"),
-    dubToggle: document.getElementById("dub-toggle"),
+    playerSettingsWrap: document.getElementById("player-settings-wrap"),
+    playerSettingsToggle: document.getElementById("player-settings-toggle"),
+    playerSettingsPanel: document.getElementById("player-settings-panel"),
+    heroScrollBrowse: document.getElementById("hero-scroll-browse"),
+    browseToolbar: document.querySelector(".browse-toolbar"),
   };
 
+  // ——— State ———
   const catalog = {
     movie: { items: [], loaded: false },
     tv: { items: [], loaded: false },
@@ -62,29 +78,54 @@
     netflix: { items: [], loaded: false },
   };
 
-  /** @type {ReturnType<typeof normalizeMovie>|ReturnType<typeof normalizeTv>|null} */
   let featuredItem = null;
-
   let mode = MODE_MOVIE;
   let isDub = false;
-  /** @type {{ id: number; mediaType: string; isAnime: boolean } | null} */
   let lastMedia = null;
-
   let searchTimer = 0;
   let searchGeneration = 0;
-  /** @type {ReturnType<typeof setInterval> | null} */
   let heroRotationTimer = null;
-  const HERO_SWAP_MS = 30000;
-
-  /** @type {ReturnType<typeof setTimeout> | null} */
   let vidplusAnimeFallbackTimer = null;
-  /** @type {(() => void) | null} */
   let animeMovieLoadHandler = null;
 
-  const DEFAULT_SEASON = 1;
-  const DEFAULT_EPISODE = 1;
-  const ANIME_MOVIE_FALLBACK_MS = 8000;
+  // ——— URL builders ———
+  function buildVidPlusQueryString(dub) {
+    const p = new URLSearchParams();
+    p.set("dub", dub ? "true" : "false");
+    p.set("color", EMBED_THEME);
+    return p.toString();
+  }
 
+  function buildVidPlusTvUrl(id, season, episode, dub) {
+    return "https://player.vidplus.to/embed/tv/" + id + "/" + season + "/" + episode + "?" + buildVidPlusQueryString(dub);
+  }
+
+  function buildVidPlusAnimeUrl(id, episode, dub) {
+    return "https://player.vidplus.to/embed/anime/" + id + "/" + episode + "?" + buildVidPlusQueryString(dub);
+  }
+
+  function buildEmbedUrl(id, mediaType, opts) {
+    const isAnime = !!opts.isAnime;
+    const dub = opts.isDub;
+
+    if (isAnime) {
+      if (mediaType === "tv") return buildVidPlusTvUrl(id, DEFAULT_SEASON, DEFAULT_EPISODE, dub);
+      return buildVidPlusAnimeUrl(id, DEFAULT_EPISODE, dub);
+    }
+
+    if (mediaType === "tv") {
+      return (
+        "https://www.vidking.net/embed/tv/" +
+        id +
+        "/1/1?color=" +
+        EMBED_THEME +
+        "&autoPlay=true&episodeSelector=true"
+      );
+    }
+    return "https://www.vidking.net/embed/movie/" + id + "?color=" + EMBED_THEME + "&autoPlay=true";
+  }
+
+  // ——— Timers ———
   function clearVidplusFallbackTimer() {
     if (vidplusAnimeFallbackTimer !== null) {
       clearTimeout(vidplusAnimeFallbackTimer);
@@ -99,159 +140,68 @@
     }
   }
 
-  /**
-   * VidPlus expects explicit dub=true | dub=false.
-   * @param {boolean} isDub
-   */
-  function buildVidPlusQueryString(isDub) {
-    const p = new URLSearchParams();
-    p.set("dub", isDub ? "true" : "false");
-    p.set("color", "e11d48");
-    return p.toString();
-  }
+  // ——— Error ———
+  function hideError() { els.error.hidden = true; els.error.textContent = ""; }
+  function showError(msg) { els.error.textContent = msg; els.error.hidden = false; }
 
-  /**
-   * @param {number} id TMDB id
-   * @param {number} season
-   * @param {number} episode
-   * @param {boolean} isDub
-   */
-  function buildVidPlusTvUrl(id, season, episode, isDub) {
-    return (
-      "https://player.vidplus.to/embed/tv/" +
-      id +
-      "/" +
-      season +
-      "/" +
-      episode +
-      "?" +
-      buildVidPlusQueryString(isDub)
-    );
-  }
-
-  /**
-   * Anime route: /embed/anime/{id}/{episode} (single episode index, not season/episode).
-   * @param {number} id TMDB id
-   * @param {number} episode
-   * @param {boolean} isDub
-   */
-  function buildVidPlusAnimeUrl(id, episode, isDub) {
-    return (
-      "https://player.vidplus.to/embed/anime/" +
-      id +
-      "/" +
-      episode +
-      "?" +
-      buildVidPlusQueryString(isDub)
-    );
-  }
-
-  function hideError() {
-    els.error.hidden = true;
-    els.error.textContent = "";
-  }
-
-  function showError(msg) {
-    els.error.textContent = msg;
-    els.error.hidden = false;
-  }
-
+  // ——— TMDB fetch ———
   async function tmdbFetch(path, params) {
     const url = new URL(API_BASE + path);
     if (params) {
-      Object.entries(params).forEach(([k, v]) => {
+      Object.entries(params).forEach(function ([k, v]) {
         if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
       });
     }
     const res = await fetch(url.toString(), {
-      headers: {
-        Authorization: "Bearer " + TMDB_READ_TOKEN,
-        accept: "application/json",
-      },
+      headers: { Authorization: "Bearer " + TMDB_READ_TOKEN, accept: "application/json" },
     });
     if (!res.ok) {
-      const errText = await res.text().catch(() => "");
+      const errText = await res.text().catch(function () { return ""; });
       throw new Error(errText || "TMDB request failed (" + res.status + ")");
     }
     return res.json();
   }
 
-  function posterUrl(path) {
-    if (!path) return "";
-    return IMG_BASE + path;
-  }
-
-  function backdropUrl(path) {
-    if (!path) return "";
-    return IMG_BACKDROP + path;
-  }
+  // ——— Helpers ———
+  function posterUrl(path) { return path ? IMG_BASE + path : ""; }
+  function backdropUrl(path) { return path ? IMG_BACKDROP + path : ""; }
 
   function clipText(str, max) {
     if (!str) return "";
     const t = String(str).trim();
-    if (t.length <= max) return t;
-    return t.slice(0, max).trim() + "…";
+    return t.length <= max ? t : t.slice(0, max).trim() + "…";
   }
 
   function yearFromItem(item, mediaType) {
     const raw = mediaType === "tv" ? item.first_air_date : item.release_date;
     if (!raw || typeof raw !== "string") return "—";
-    const y = raw.slice(0, 4);
-    return y || "—";
+    return raw.slice(0, 4) || "—";
   }
 
   function titleFromItem(item, mediaType) {
-    if (mediaType === "tv") return item.name || "Untitled";
-    return item.title || "Untitled";
+    return (mediaType === "tv" ? item.name : item.title) || "Untitled";
   }
 
-  /**
-   * @param {object} m
-   * @param {boolean} [isAnime]
-   */
   function normalizeMovie(m, isAnime) {
-    return {
-      id: m.id,
-      media_type: "movie",
-      title: titleFromItem(m, "movie"),
-      year: yearFromItem(m, "movie"),
-      poster_path: m.poster_path || null,
-      backdrop_path: m.backdrop_path || null,
-      overview: typeof m.overview === "string" ? m.overview : "",
-      isAnime: !!isAnime,
-    };
+    return { id: m.id, media_type: "movie", title: titleFromItem(m, "movie"),
+      year: yearFromItem(m, "movie"), poster_path: m.poster_path || null,
+      backdrop_path: m.backdrop_path || null, overview: typeof m.overview === "string" ? m.overview : "",
+      isAnime: !!isAnime };
   }
 
-  /**
-   * @param {object} t
-   * @param {boolean} [isAnime]
-   */
   function normalizeTv(t, isAnime) {
-    return {
-      id: t.id,
-      media_type: "tv",
-      title: titleFromItem(t, "tv"),
-      year: yearFromItem(t, "tv"),
-      poster_path: t.poster_path || null,
-      backdrop_path: t.backdrop_path || null,
-      overview: typeof t.overview === "string" ? t.overview : "",
-      isAnime: !!isAnime,
-    };
+    return { id: t.id, media_type: "tv", title: titleFromItem(t, "tv"),
+      year: yearFromItem(t, "tv"), poster_path: t.poster_path || null,
+      backdrop_path: t.backdrop_path || null, overview: typeof t.overview === "string" ? t.overview : "",
+      isAnime: !!isAnime };
   }
 
-  /**
-   * @param {object} r
-   * @returns {ReturnType<typeof normalizeMovie>|ReturnType<typeof normalizeTv>|null}
-   */
   function normalizeMultiResult(r) {
     if (r.media_type === "movie") return normalizeMovie(r, false);
     if (r.media_type === "tv") return normalizeTv(r, false);
     return null;
   }
 
-  /**
-   * @param {object} r TMDB multi search hit
-   */
   function passesAnimeFilter(r) {
     if (r.media_type !== "movie" && r.media_type !== "tv") return false;
     const ids = r.genre_ids;
@@ -259,88 +209,100 @@
     return r.original_language === ANIME_LANG;
   }
 
-  /**
-   * @param {number} id
-   * @param {"movie"|"tv"} mediaType
-   * @param {{ isAnime?: boolean; isDub: boolean }} opts
-   */
-  function buildEmbedUrl(id, mediaType, opts) {
-    const isAnime = !!opts.isAnime;
-    const dub = opts.isDub;
-
-    if (isAnime) {
-      if (mediaType === "tv") {
-        return buildVidPlusTvUrl(id, DEFAULT_SEASON, DEFAULT_EPISODE, dub);
-      }
-      return buildVidPlusAnimeUrl(id, DEFAULT_EPISODE, dub);
+  function closePlayerSettingsPanel() {
+    if (!els.playerSettingsPanel || els.playerSettingsPanel.hidden) return;
+    els.playerSettingsPanel.hidden = true;
+    if (els.playerSettingsToggle) {
+      els.playerSettingsToggle.setAttribute("aria-expanded", "false");
     }
-
-    if (mediaType === "tv") {
-      return (
-        "https://www.vidking.net/embed/tv/" +
-        id +
-        "/1/1?color=e11d48&autoPlay=true&episodeSelector=true"
-      );
-    }
-    return "https://www.vidking.net/embed/movie/" + id + "?color=e11d48&autoPlay=true";
   }
 
-  /**
-   * @param {number} id
-   * @param {"movie"|"tv"} mediaType
-   * @param {{ isAnime?: boolean }} [opts]
-   */
-  function loadMedia(id, mediaType, opts) {
-    opts = opts || {};
-    const isAnime = !!opts.isAnime;
+  function togglePlayerSettingsPanel() {
+    if (!els.playerSettingsPanel || !els.playerSettingsToggle) return;
+    const open = els.playerSettingsPanel.hidden;
+    els.playerSettingsPanel.hidden = !open;
+    els.playerSettingsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  // ——— Player Modal ———
+  function openPlayerModal(item) {
+    // Set title & meta
+    els.playerModalTitle.textContent = item.title || "—";
+    els.playerModalMeta.textContent = buildFeaturedMetaLine(item);
+
+    // Show spinner, hide iframe
+    els.placeholder.classList.remove("is-hidden");
+    els.iframe.hidden = true;
+    els.iframe.src = "";
+
+    els.playerOverlay.hidden = false;
+    document.body.style.overflow = "hidden";
+    closePlayerSettingsPanel();
+
+    if (els.playerSettingsWrap) {
+      els.playerSettingsWrap.hidden = !item.isAnime;
+    }
+
+    // Load the media into the iframe
+    const isAnime = !!item.isAnime;
+    const dubParam = isAnime ? isDub : false;
+    const url = buildEmbedUrl(item.id, item.media_type, { isAnime: isAnime, isDub: dubParam });
+    lastMedia = { id: item.id, mediaType: item.media_type, isAnime: isAnime };
+
+    els.embedUrl.textContent = url;
+
+    // Handle anime movie fallback
     clearVidplusFallbackTimer();
     clearAnimeMovieLoadHandler();
 
-    const dubParam = isAnime ? isDub : false;
-
-    lastMedia = { id: id, mediaType: mediaType, isAnime: isAnime };
-
-    const url = buildEmbedUrl(id, mediaType, { isAnime: isAnime, isDub: dubParam });
-    hideError();
-    els.embedUrl.textContent = url;
-
-    if (isAnime && mediaType === "movie") {
-      const tvFallbackUrl = buildVidPlusTvUrl(
-        id,
-        DEFAULT_SEASON,
-        DEFAULT_EPISODE,
-        dubParam
-      );
+    if (isAnime && item.media_type === "movie") {
+      const tvFallbackUrl = buildVidPlusTvUrl(item.id, DEFAULT_SEASON, DEFAULT_EPISODE, dubParam);
       function onAnimeMovieLoaded() {
         clearVidplusFallbackTimer();
         clearAnimeMovieLoadHandler();
+        showIframe();
       }
       animeMovieLoadHandler = onAnimeMovieLoaded;
       els.iframe.addEventListener("load", onAnimeMovieLoaded);
       vidplusAnimeFallbackTimer = setTimeout(function () {
         vidplusAnimeFallbackTimer = null;
         clearAnimeMovieLoadHandler();
-        if (
-          lastMedia &&
-          lastMedia.id === id &&
-          lastMedia.mediaType === "movie" &&
-          lastMedia.isAnime
-        ) {
+        if (lastMedia && lastMedia.id === item.id && lastMedia.mediaType === "movie" && lastMedia.isAnime) {
           els.iframe.src = tvFallbackUrl;
           els.embedUrl.textContent = tvFallbackUrl;
         }
       }, ANIME_MOVIE_FALLBACK_MS);
+    } else {
+      // Regular load event to show iframe
+      function onLoaded() {
+        showIframe();
+        els.iframe.removeEventListener("load", onLoaded);
+      }
+      els.iframe.addEventListener("load", onLoaded);
     }
 
     els.iframe.src = url;
     els.iframe.hidden = false;
-    els.placeholder.classList.add("is-hidden");
-    els.playerSection.scrollIntoView({ behavior: "smooth", block: "start" });
-    requestAnimationFrame(function () {
-      els.iframe.focus();
-    });
+    els.playerClose.focus();
   }
 
+  function showIframe() {
+    els.placeholder.classList.add("is-hidden");
+    els.iframe.hidden = false;
+  }
+
+  function closePlayerModal() {
+    clearVidplusFallbackTimer();
+    clearAnimeMovieLoadHandler();
+    closePlayerSettingsPanel();
+    els.iframe.src = "";
+    els.iframe.hidden = true;
+    els.placeholder.classList.remove("is-hidden");
+    els.playerOverlay.hidden = true;
+    document.body.style.overflow = "";
+  }
+
+  // ——— Dub preference ———
   function setDubPreference(nextDub) {
     isDub = nextDub;
     els.prefSub.classList.toggle("is-active", !isDub);
@@ -348,51 +310,33 @@
     els.prefSub.setAttribute("aria-pressed", (!isDub).toString());
     els.prefDub.setAttribute("aria-pressed", isDub.toString());
 
-    if (els.dubToggle) {
-      els.dubToggle.classList.toggle("dub-toggle--dub-on", isDub);
+    try {
+      localStorage.setItem(DUB_STORAGE_KEY, isDub ? "true" : "false");
+    } catch (_) {
+      /* ignore */
     }
 
+    // Update all anime lang badges
     document.querySelectorAll(".media-card-lang").forEach(function (el) {
       el.textContent = isDub ? "Dub" : "Sub";
     });
 
+    // Reload if anime is currently playing
     if (lastMedia && lastMedia.isAnime) {
-      loadMedia(lastMedia.id, lastMedia.mediaType, { isAnime: true });
+      const url = buildEmbedUrl(lastMedia.id, lastMedia.mediaType, { isAnime: true, isDub: isDub });
+      els.iframe.src = url;
+      els.embedUrl.textContent = url;
+      // Show spinner while reloading
+      els.placeholder.classList.remove("is-hidden");
+      function onReloaded() {
+        els.placeholder.classList.add("is-hidden");
+        els.iframe.removeEventListener("load", onReloaded);
+      }
+      els.iframe.addEventListener("load", onReloaded);
     }
   }
 
-  function syncTabAria() {
-    const tabs = [els.modeMovie, els.modeTv, els.modeAnime];
-    tabs.forEach(function (btn) {
-      const active = btn.classList.contains("is-active");
-      btn.setAttribute("aria-selected", active ? "true" : "false");
-    });
-  }
-
-  function clearChildren(el) {
-    while (el.firstChild) el.removeChild(el.firstChild);
-  }
-
-  function fillSkeletonRow(container, count) {
-    clearChildren(container);
-    for (let i = 0; i < count; i += 1) {
-      const sk = document.createElement("div");
-      sk.className = "card-skeleton";
-      sk.setAttribute("aria-hidden", "true");
-      container.appendChild(sk);
-    }
-  }
-
-  function fillSkeletonTop10(container) {
-    clearChildren(container);
-    for (let i = 0; i < 10; i += 1) {
-      const sk = document.createElement("div");
-      sk.className = "top10-skeleton";
-      sk.setAttribute("aria-hidden", "true");
-      container.appendChild(sk);
-    }
-  }
-
+  // ——— Hero ———
   function buildFeaturedMetaLine(item) {
     const bits = [];
     if (item.year && item.year !== "—") bits.push(item.year);
@@ -409,10 +353,7 @@
     if (!featuredItem) {
       els.featuredTitle.textContent = "Featured";
       els.featuredMeta.textContent = "";
-      if (els.featuredOverview) {
-        els.featuredOverview.textContent = "";
-        els.featuredOverview.hidden = true;
-      }
+      if (els.featuredOverview) { els.featuredOverview.textContent = ""; els.featuredOverview.hidden = true; }
       els.featuredBackdrop.hidden = true;
       els.featuredBackdrop.removeAttribute("src");
       if (els.featuredPlay) els.featuredPlay.disabled = true;
@@ -420,9 +361,9 @@
     }
 
     if (els.featuredPlay) els.featuredPlay.disabled = false;
-
     els.featuredTitle.textContent = featuredItem.title || "Featured";
     els.featuredMeta.textContent = buildFeaturedMetaLine(featuredItem);
+
     if (els.featuredOverview) {
       const ov = clipText(featuredItem.overview, 280);
       els.featuredOverview.textContent = ov;
@@ -439,6 +380,7 @@
     }
   }
 
+  // ——— Top 10 ———
   function renderTop10(container, items) {
     if (!container) return;
     clearChildren(container);
@@ -447,9 +389,9 @@
       const rank = index + 1;
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "top10-card movie-card";
+      btn.className = "top10-card";
       btn.setAttribute("role", "listitem");
-      btn.setAttribute("aria-label", "Play ranked " + rank + ": " + item.title);
+      btn.setAttribute("aria-label", "Play #" + rank + ": " + item.title);
 
       const rankEl = document.createElement("span");
       rankEl.className = "top10-card__rank";
@@ -469,83 +411,20 @@
 
       btn.appendChild(rankEl);
       btn.appendChild(poster);
-      btn.addEventListener("click", function () {
-        loadMedia(item.id, item.media_type, { isAnime: item.isAnime });
-      });
+      btn.addEventListener("click", function () { openPlayerModal(item); });
       container.appendChild(btn);
     });
   }
 
-  function getCurrentTrendingItems() {
-    if (mode === MODE_ANIME && catalog.anime.loaded) return catalog.anime.items;
-    if (mode === MODE_TV && catalog.tv.loaded) return catalog.tv.items;
-    if (catalog.movie.loaded) return catalog.movie.items;
-    return [];
-  }
-
-  function rotateHeroToRandomTrending() {
-    const list = getCurrentTrendingItems();
-    if (list.length === 0) return;
-    if (list.length === 1) {
-      updateFeaturedHero(list[0]);
-      return;
-    }
-    let idx = 0;
-    let attempts = 0;
-    do {
-      idx = Math.floor(Math.random() * list.length);
-      attempts += 1;
-    } while (
-      attempts < 16 &&
-      featuredItem &&
-      list[idx].id === featuredItem.id &&
-      list[idx].media_type === featuredItem.media_type
-    );
-    updateFeaturedHero(list[idx]);
-  }
-
-  function stopHeroAutoSwap() {
-    if (heroRotationTimer !== null) {
-      clearInterval(heroRotationTimer);
-      heroRotationTimer = null;
-    }
-  }
-
-  function startHeroAutoSwap() {
-    stopHeroAutoSwap();
-    const list = getCurrentTrendingItems();
-    if (list.length === 0) return;
-    heroRotationTimer = window.setInterval(rotateHeroToRandomTrending, HERO_SWAP_MS);
-  }
-
-  function syncHeroAndTop10FromCatalog(items) {
-    if (!Array.isArray(items) || items.length === 0) {
-      updateFeaturedHero(null);
-      renderTop10(els.top10Grid, []);
-      stopHeroAutoSwap();
-      return;
-    }
-    updateFeaturedHero(items[0]);
-    renderTop10(els.top10Grid, items);
-    startHeroAutoSwap();
-  }
-
-  /**
-   * @param {HTMLElement} container
-   * @param {Array<{ id: number; media_type: string; title: string; year: string; poster_path: string | null; isAnime: boolean }>} items
-   */
+  // ——— Media cards ———
   function renderMediaCards(container, items) {
     clearChildren(container);
     items.forEach(function (item) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className =
-        "media-card movie-card" + (item.poster_path ? "" : " media-card--empty-poster");
+      btn.className = "media-card" + (item.poster_path ? "" : " media-card--empty-poster");
       btn.setAttribute("role", "listitem");
-      btn.setAttribute(
-        "aria-label",
-        "Play " + item.title + " (" + item.year + "), " + item.media_type
-      );
+      btn.setAttribute("aria-label", "Play " + item.title + " (" + item.year + ")");
 
       const inner = document.createElement("div");
       inner.className = "media-card__inner";
@@ -574,30 +453,91 @@
       meta.appendChild(h);
       meta.appendChild(y);
       inner.appendChild(meta);
-
       btn.appendChild(inner);
 
       if (item.isAnime) {
         const lang = document.createElement("span");
-        lang.className = "media-card-lang movie-chip";
+        lang.className = "media-card-lang";
         lang.textContent = isDub ? "Dub" : "Sub";
         btn.appendChild(lang);
       }
 
       const badge = document.createElement("span");
       badge.className = "media-card-badge";
-      badge.textContent =
-        item.media_type === "tv" ? (item.isAnime ? "Anime" : "TV") : item.isAnime ? "Anime" : "Movie";
+      badge.textContent = item.media_type === "tv" ? (item.isAnime ? "Anime" : "TV") : item.isAnime ? "Anime" : "Movie";
       btn.appendChild(badge);
 
-      btn.addEventListener("click", function () {
-        loadMedia(item.id, item.media_type, { isAnime: item.isAnime });
-      });
-
+      btn.addEventListener("click", function () { openPlayerModal(item); });
       container.appendChild(btn);
     });
   }
 
+  // ——— DOM helpers ———
+  function clearChildren(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+  function fillSkeletonRow(container, count) {
+    clearChildren(container);
+    for (let i = 0; i < count; i++) {
+      const sk = document.createElement("div");
+      sk.className = "card-skeleton";
+      sk.setAttribute("aria-hidden", "true");
+      container.appendChild(sk);
+    }
+  }
+
+  function fillSkeletonTop10(container) {
+    clearChildren(container);
+    for (let i = 0; i < 10; i++) {
+      const sk = document.createElement("div");
+      sk.className = "top10-skeleton";
+      sk.setAttribute("aria-hidden", "true");
+      container.appendChild(sk);
+    }
+  }
+
+  // ——— Hero rotation ———
+  function getCurrentTrendingItems() {
+    if (mode === MODE_ANIME && catalog.anime.loaded) return catalog.anime.items;
+    if (mode === MODE_TV && catalog.tv.loaded) return catalog.tv.items;
+    if (catalog.movie.loaded) return catalog.movie.items;
+    return [];
+  }
+
+  function rotateHeroToRandomTrending() {
+    const list = getCurrentTrendingItems();
+    if (!list.length) return;
+    if (list.length === 1) { updateFeaturedHero(list[0]); return; }
+    let idx = 0, attempts = 0;
+    do {
+      idx = Math.floor(Math.random() * list.length);
+      attempts++;
+    } while (attempts < 16 && featuredItem && list[idx].id === featuredItem.id && list[idx].media_type === featuredItem.media_type);
+    updateFeaturedHero(list[idx]);
+  }
+
+  function stopHeroAutoSwap() {
+    if (heroRotationTimer !== null) { clearInterval(heroRotationTimer); heroRotationTimer = null; }
+  }
+
+  function startHeroAutoSwap() {
+    stopHeroAutoSwap();
+    if (!getCurrentTrendingItems().length) return;
+    heroRotationTimer = window.setInterval(rotateHeroToRandomTrending, HERO_SWAP_MS);
+  }
+
+  function syncHeroAndTop10FromCatalog(items) {
+    if (!Array.isArray(items) || !items.length) {
+      updateFeaturedHero(null);
+      renderTop10(els.top10Grid, []);
+      stopHeroAutoSwap();
+      return;
+    }
+    updateFeaturedHero(items[0]);
+    renderTop10(els.top10Grid, items);
+    startHeroAutoSwap();
+  }
+
+  // ——— Data fetching ———
   async function ensureMovieTrending() {
     if (catalog.movie.loaded) {
       renderMediaCards(els.trendingGrid, catalog.movie.items);
@@ -609,9 +549,7 @@
     try {
       const data = await tmdbFetch("/trending/movie/day", { page: 1 });
       const raw = Array.isArray(data.results) ? data.results.slice(0, TRENDING_COUNT) : [];
-      catalog.movie.items = raw.map(function (m) {
-        return normalizeMovie(m, false);
-      });
+      catalog.movie.items = raw.map(function (m) { return normalizeMovie(m, false); });
       catalog.movie.loaded = true;
       renderMediaCards(els.trendingGrid, catalog.movie.items);
       syncHeroAndTop10FromCatalog(catalog.movie.items);
@@ -635,9 +573,7 @@
     try {
       const data = await tmdbFetch("/trending/tv/day", { page: 1 });
       const raw = Array.isArray(data.results) ? data.results.slice(0, TRENDING_COUNT) : [];
-      catalog.tv.items = raw.map(function (t) {
-        return normalizeTv(t, false);
-      });
+      catalog.tv.items = raw.map(function (t) { return normalizeTv(t, false); });
       catalog.tv.loaded = true;
       renderMediaCards(els.trendingGrid, catalog.tv.items);
       syncHeroAndTop10FromCatalog(catalog.tv.items);
@@ -665,26 +601,12 @@
       ]);
 
       const merged = [];
-      (mov.results || []).forEach(function (m) {
-        merged.push({
-          n: normalizeMovie(m, true),
-          pop: m.popularity || 0,
-        });
-      });
-      (tv.results || []).forEach(function (t) {
-        merged.push({
-          n: normalizeTv(t, true),
-          pop: t.popularity || 0,
-        });
-      });
+      (mov.results || []).forEach(function (m) { merged.push({ n: normalizeMovie(m, true), pop: m.popularity || 0 }); });
+      (tv.results || []).forEach(function (t) { merged.push({ n: normalizeTv(t, true), pop: t.popularity || 0 }); });
+      merged.sort(function (a, b) { return b.pop - a.pop; });
 
-      merged.sort(function (a, b) {
-        return b.pop - a.pop;
-      });
-
-      const seen = new Set();
-      const deduped = [];
-      for (let i = 0; i < merged.length; i += 1) {
+      const seen = new Set(), deduped = [];
+      for (let i = 0; i < merged.length; i++) {
         const x = merged[i];
         const key = x.n.media_type + "-" + x.n.id;
         if (seen.has(key)) continue;
@@ -708,29 +630,18 @@
 
   async function ensureNetflixRow() {
     if (!els.netflixGrid) return;
-    if (catalog.netflix.loaded) {
-      renderMediaCards(els.netflixGrid, catalog.netflix.items);
-      return;
-    }
+    if (catalog.netflix.loaded) { renderMediaCards(els.netflixGrid, catalog.netflix.items); return; }
     fillSkeletonRow(els.netflixGrid, 12);
     try {
-      const data = await tmdbFetch("/discover/movie", {
-        with_watch_providers: "8",
-        watch_region: "US",
-        sort_by: "popularity.desc",
-        page: 1,
-      });
+      const data = await tmdbFetch("/discover/movie", { with_watch_providers: "8", watch_region: "US", sort_by: "popularity.desc", page: 1 });
       const raw = Array.isArray(data.results) ? data.results.slice(0, 20) : [];
-      catalog.netflix.items = raw.map(function (m) {
-        return normalizeMovie(m, false);
-      });
+      catalog.netflix.items = raw.map(function (m) { return normalizeMovie(m, false); });
       catalog.netflix.loaded = true;
       renderMediaCards(els.netflixGrid, catalog.netflix.items);
-    } catch (e) {
-      clearChildren(els.netflixGrid);
-    }
+    } catch (e) { clearChildren(els.netflixGrid); }
   }
 
+  // ——— Mode & search ———
   function updateDiscoverTitles() {
     if (mode === MODE_ANIME) {
       els.trendingHeading.textContent = "Popular anime";
@@ -750,43 +661,29 @@
   function refreshDiscoverSection() {
     updateDiscoverTitles();
     hideError();
-    if (mode === MODE_ANIME) {
-      ensureAnimeCatalog();
-    } else if (mode === MODE_TV) {
-      ensureTvTrending();
-    } else {
-      ensureMovieTrending();
-    }
+    if (mode === MODE_ANIME) ensureAnimeCatalog();
+    else if (mode === MODE_TV) ensureTvTrending();
+    else ensureMovieTrending();
   }
 
   function filterByMode(items) {
-    if (mode === MODE_MOVIE) return items.filter(function (x) {
-      return x.media_type === "movie";
-    });
-    if (mode === MODE_TV) return items.filter(function (x) {
-      return x.media_type === "tv";
-    });
+    if (mode === MODE_MOVIE) return items.filter(function (x) { return x.media_type === "movie"; });
+    if (mode === MODE_TV) return items.filter(function (x) { return x.media_type === "tv"; });
     return items;
   }
 
-  /**
-   * @param {object[]} raw TMDB multi results
-   */
   function filterSearchRaw(raw) {
     if (mode === MODE_ANIME) {
       return raw.filter(passesAnimeFilter).map(function (r) {
-        if (r.media_type === "movie") return normalizeMovie(r, true);
-        return normalizeTv(r, true);
+        return r.media_type === "movie" ? normalizeMovie(r, true) : normalizeTv(r, true);
       });
     }
-    const normalized = raw.map(normalizeMultiResult).filter(Boolean);
-    return filterByMode(normalized);
+    return filterByMode(raw.map(normalizeMultiResult).filter(Boolean));
   }
 
   async function runSearch(query) {
     const q = query.trim();
     const gen = ++searchGeneration;
-
     if (!q) {
       els.searchSection.hidden = true;
       clearChildren(els.searchGrid);
@@ -794,25 +691,16 @@
       hideError();
       return;
     }
-
     els.searchSection.hidden = false;
     fillSkeletonRow(els.searchGrid, 12);
     hideError();
-
     try {
-      const data = await tmdbFetch("/search/multi", {
-        query: q,
-        page: 1,
-        include_adult: "false",
-      });
+      const data = await tmdbFetch("/search/multi", { query: q, page: 1, include_adult: "false" });
       if (gen !== searchGeneration) return;
-
       const raw = Array.isArray(data.results) ? data.results : [];
       const filtered = filterSearchRaw(raw);
-
       renderMediaCards(els.searchGrid, filtered);
-      els.resultsMeta.textContent =
-        filtered.length === 0 ? "No matches for this filter" : filtered.length + " titles";
+      els.resultsMeta.textContent = filtered.length === 0 ? "No matches for this filter" : filtered.length + " titles";
     } catch (e) {
       if (gen !== searchGeneration) return;
       clearChildren(els.searchGrid);
@@ -824,9 +712,13 @@
   function scheduleSearch() {
     const q = els.liveSearch.value;
     window.clearTimeout(searchTimer);
-    searchTimer = window.setTimeout(function () {
-      runSearch(q);
-    }, DEBOUNCE_MS);
+    searchTimer = window.setTimeout(function () { runSearch(q); }, DEBOUNCE_MS);
+  }
+
+  function syncTabAria() {
+    [els.modeMovie, els.modeTv, els.modeAnime].forEach(function (btn) {
+      btn.setAttribute("aria-selected", btn.classList.contains("is-active") ? "true" : "false");
+    });
   }
 
   function setMode(next) {
@@ -835,7 +727,6 @@
     els.modeTv.classList.toggle("is-active", mode === MODE_TV);
     els.modeAnime.classList.toggle("is-active", mode === MODE_ANIME);
     syncTabAria();
-
     hideError();
     window.clearTimeout(searchTimer);
     if (els.liveSearch.value.trim()) {
@@ -845,42 +736,83 @@
       clearChildren(els.searchGrid);
       els.resultsMeta.textContent = "";
     }
-
     refreshDiscoverSection();
   }
 
+  // ——— Init ———
   function init() {
-    els.modeMovie.addEventListener("click", function () {
-      setMode(MODE_MOVIE);
-    });
-    els.modeTv.addEventListener("click", function () {
-      setMode(MODE_TV);
-    });
-    els.modeAnime.addEventListener("click", function () {
-      setMode(MODE_ANIME);
-    });
+    // Mode buttons
+    els.modeMovie.addEventListener("click", function () { setMode(MODE_MOVIE); });
+    els.modeTv.addEventListener("click", function () { setMode(MODE_TV); });
+    els.modeAnime.addEventListener("click", function () { setMode(MODE_ANIME); });
 
+    // Search
     els.liveSearch.addEventListener("input", scheduleSearch);
     els.liveSearch.addEventListener("search", scheduleSearch);
 
-    els.prefSub.addEventListener("click", function () {
+    // Player overlay (backdrop closes)
+    els.playerClose.addEventListener("click", closePlayerModal);
+    els.playerOverlay.addEventListener("click", function (e) {
+      if (e.target === els.playerOverlay) closePlayerModal();
+    });
+
+    if (els.playerSettingsToggle) {
+      els.playerSettingsToggle.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        togglePlayerSettingsPanel();
+      });
+    }
+
+    document.addEventListener("click", function (e) {
+      if (els.playerOverlay.hidden) return;
+      if (!els.playerSettingsWrap || els.playerSettingsWrap.hidden) return;
+      if (!els.playerSettingsPanel || els.playerSettingsPanel.hidden) return;
+      if (!els.playerSettingsWrap.contains(e.target)) {
+        closePlayerSettingsPanel();
+      }
+    });
+
+    // Keyboard
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") {
+        if (!els.playerOverlay.hidden) {
+          if (els.playerSettingsPanel && !els.playerSettingsPanel.hidden && els.playerSettingsWrap && !els.playerSettingsWrap.hidden) {
+            closePlayerSettingsPanel();
+          } else closePlayerModal();
+        }
+      }
+    });
+
+    // Sub/Dub (inside player overlay)
+    els.prefSub.addEventListener("click", function (ev) {
+      ev.stopPropagation();
       setDubPreference(false);
     });
-    els.prefDub.addEventListener("click", function () {
+    els.prefDub.addEventListener("click", function (ev) {
+      ev.stopPropagation();
       setDubPreference(true);
     });
 
-    if (els.dubToggle) {
-      els.dubToggle.classList.toggle("dub-toggle--dub-on", isDub);
+    if (els.heroScrollBrowse && els.browseToolbar) {
+      els.heroScrollBrowse.addEventListener("click", function () {
+        els.browseToolbar.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     }
 
+    // Hero play button
     if (els.featuredPlay) {
       els.featuredPlay.addEventListener("click", function () {
         if (!featuredItem) return;
-        loadMedia(featuredItem.id, featuredItem.media_type, {
-          isAnime: featuredItem.isAnime,
-        });
+        openPlayerModal(featuredItem);
       });
+    }
+
+    try {
+      var stored = localStorage.getItem(DUB_STORAGE_KEY);
+      if (stored === "true") setDubPreference(true);
+      else if (stored === "false") setDubPreference(false);
+    } catch (_) {
+      /* ignore */
     }
 
     ensureNetflixRow();
